@@ -866,6 +866,26 @@ class ModelConfig:
 
         if (
             is_draft_model
+            and self.hf_config.architectures[0] == "DeepseekOCRForCausalLM"
+        ):
+            # Only Jina OCR checkpoints bundle a FastMTP head (mtp_module.*);
+            # plain DeepSeek-OCR has nothing to draft with.
+            num_mtp_layers = getattr(self.hf_config, "num_nextn_predict_layers", 0)
+            if not num_mtp_layers:
+                raise ValueError(
+                    "NEXTN speculative decoding needs a DeepSeek-OCR checkpoint that "
+                    "bundles a FastMTP head (num_nextn_predict_layers > 0), e.g. "
+                    "jinaai/jina-ocr-v1."
+                )
+            # The target's ModelConfig shares this hf_config object; the MTP
+            # depth must only apply to the draft.
+            self.hf_config = copy.deepcopy(self.hf_config)
+            self.hf_text_config = get_hf_text_config(self.hf_config)
+            self.hf_config.architectures[0] = "DeepseekOCRForCausalLMNextN"
+            self.hf_text_config.num_nextn_predict_layers = 1
+
+        if (
+            is_draft_model
             and self.hf_config.architectures[0] == "DeepseekV4ForCausalLM"
         ):
             from sglang.srt.speculative.dspark_components.dspark_config import (
