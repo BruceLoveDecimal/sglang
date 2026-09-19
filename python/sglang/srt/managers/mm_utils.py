@@ -737,7 +737,14 @@ def general_mm_embed_routine(
                                         )
                                     )
             forward_batch.mm_inputs = None
-            forward_batch.mm_input_embeds = input_embeds
+            # The decoder's fused add+RMSNorm updates its residual stream in
+            # place, and that stream aliases `input_embeds`; a draft model that
+            # re-reads these embeddings (NextN/MTP draft extend) needs a copy.
+            forward_batch.mm_input_embeds = (
+                input_embeds.clone()
+                if forward_batch.capture_hidden_mode.need_capture()
+                else input_embeds
+            )
         else:
             input_embeds = embed_tokens(input_ids)
         # Copy to pre-allocated buffer if available (for CUDA graph address stability)

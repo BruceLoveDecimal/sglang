@@ -1,7 +1,8 @@
-"""Native Jina OCR serving smoke test (requires a CUDA GPU).
+"""Native Jina OCR serving smoke tests (requires a CUDA GPU).
 
 Run: python -m unittest test.registered.vlm.test_jina_ocr_server
-The target uses the existing DeepSeek-OCR engine; FastMTP is not enabled.
+Covers the autoregressive DeepSeek-OCR target and the same target with the
+checkpoint's FastMTP head driven through NEXTN speculative decoding.
 """
 
 import base64
@@ -14,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 from sglang.test.ci.ci_register import register_cuda_ci
 from sglang.test.vlm_utils import TestOpenAIMLLMServerBase
 
-register_cuda_ci(est_time=120, stage="base-b", runner_config="1-gpu-large")
+register_cuda_ci(est_time=300, stage="base-b", runner_config="1-gpu-large")
 
 
 class TestJinaOCRServer(TestOpenAIMLLMServerBase):
@@ -61,6 +62,16 @@ class TestJinaOCRServer(TestOpenAIMLLMServerBase):
                 max_tokens=64,
             )
         self.assertIn("CHARLIE 333", response.choices[0].message.content or "")
+
+
+class TestJinaOCRServerFastMTP(TestJinaOCRServer):
+    extra_args = [
+        *TestJinaOCRServer.extra_args,
+        "--speculative-algorithm=NEXTN",
+        "--speculative-num-steps=3",
+        "--speculative-eagle-topk=1",
+        "--speculative-num-draft-tokens=4",
+    ]
 
 
 del TestOpenAIMLLMServerBase

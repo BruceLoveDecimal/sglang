@@ -1794,6 +1794,10 @@ class DeepseekOCRForCausalLM(nn.Module):
 
         return hidden_states
 
+    def get_embed_and_head(self):
+        # Shared with the FastMTP draft (see deepseek_ocr_nextn.py).
+        return self.model.model.embed_tokens.weight, self.model.lm_head.weight
+
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
@@ -1807,8 +1811,8 @@ class DeepseekOCRForCausalLM(nn.Module):
         params_dict = dict(self.named_parameters())
         loaded_params: Set[str] = set()
         for name, loaded_weight in weights:
-            # Jina OCR checkpoints also contain a separate FastMTP draft head.
-            # The autoregressive target only loads the DeepSeek-OCR backbone.
+            # Jina OCR checkpoints also carry a FastMTP draft head; it is loaded
+            # by DeepseekOCRForCausalLMNextN, the target keeps the backbone only.
             if name.startswith(("mtp_module.", "mtp_embed_tokens.")):
                 continue
             if "rotary_emb.inv_freq" in name:

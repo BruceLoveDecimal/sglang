@@ -7,7 +7,7 @@ description: "Serve jinaai/jina-ocr-v1 with SGLang for document-to-Markdown OCR 
 
 [jinaai/jina-ocr-v1](https://huggingface.co/jinaai/jina-ocr-v1) converts document images into Markdown. SGLang serves it with the native DeepSeek-OCR backend, including Jina's image preprocessing and up to nine local image crops.
 
-This recipe uses autoregressive decoding. FastMTP draft heads are not used. You do not need `--trust-remote-code`.
+This recipe uses autoregressive decoding by default; the checkpoint's FastMTP draft head can be enabled with a few speculative-decoding flags (see [FastMTP speculative decoding](#fastmtp-speculative-decoding)). You do not need `--trust-remote-code`.
 
 ## Prerequisites
 
@@ -104,11 +104,24 @@ for chunk in stream:
 print()
 ```
 
+## FastMTP speculative decoding
+
+The checkpoint bundles a FastMTP draft head (`mtp_module.*`): one dense DeepSeek decoder block that shares the backbone's embedding, final norm and lm_head, trained to be reused recursively for K draft steps. SGLang loads it as a NextN draft model, so enabling it is the standard NEXTN flag set. Add these to the server command above:
+
+```bash
+  --speculative-algorithm NEXTN \
+  --speculative-num-steps 3 \
+  --speculative-eagle-topk 1 \
+  --speculative-num-draft-tokens 4
+```
+
+Greedy verification keeps the output identical to autoregressive decoding (`temperature=0`). Whether it is faster depends on the GPU: the backbone activates only about 570M parameters per token, so on fast GPUs a plain decode step is already cheap and the draft-plus-verify overhead can cancel the gain. Measured on a single RTX 5090 at batch size 1, decode ran at 875 tok/s with FastMTP versus 797 tok/s without on a natural-prose page (accept length about 3.4 of 4), and 562 versus 772 tok/s on a page of random words (accept length about 2.1). Slower GPUs, such as the L4 in Jina's report, benefit more. The draft head adds about 0.7 GB of weights plus its own KV cache.
+
 ## Configuration and validation
 
 - **Output length:** The 4096-token context includes the prompt, image tokens, and generated text. If the response ends with `finish_reason="length"`, adjust `max_tokens` within the available context budget. Longer documents may need a larger `--context-length` and more GPU memory.
 - **Image processing:** The native processor applies Jina's crop policy automatically, including the nine-crop path. Submit the original page image rather than manually assembling tiles.
 - **Caching and CUDA graphs:** Keep the default prefix cache enabled to reuse repeated image-and-prompt inputs. Decode CUDA graphs were validated at batch sizes 1, 2, and 4. This does not imply support for multimodal prefill CUDA graphs.
-- **Validation scope:** Single-GPU BF16 smoke tests covered concurrent requests at three image sizes, invoice extraction, streaming, and repeated prompts. Generated token sequences matched the reference model on the three synthetic comparison images. This is not an OCR dataset accuracy or throughput benchmark; quantization, multi-GPU execution, and FastMTP were not validated.
+- **Validation scope:** Single-GPU BF16 smoke tests covered concurrent requests at three image sizes, invoice extraction, streaming, and repeated prompts. Generated token sequences matched the reference model on the three synthetic comparison images. FastMTP was validated for output equality and acceptance length on the same synthetic pages. This is not an OCR dataset accuracy or throughput benchmark; quantization and multi-GPU execution were not validated.
 
 For other request formats, see [sending requests](/docs/basic_usage/send_request).
